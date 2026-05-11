@@ -11,8 +11,10 @@ type GameUndo = {
   players: Participant[]
   hostId: string
   questionText: string
-  orderIds: string[]
+  hostOrderIds: string[]
+  attemptOrderIds: string[]
   questionVisible: boolean
+  hostRankingVisible: boolean
 }
 
 const step = ref<Step>('setup')
@@ -21,9 +23,14 @@ const newName = ref('')
 
 const hostId = ref<string>('')
 const questionText = ref('')
-const orderIds = ref<string[]>([])
+/** Classement officiel du tri-poteur (hors lui-même). */
+const hostOrderIds = ref<string[]>([])
+/** En mode « Classement à refaire » : tentative des autres potes. */
+const attemptOrderIds = ref<string[]>([])
 const gameMode = ref<GameMode>('order')
 const questionVisible = ref(true)
+/** En mode « Classement à refaire » : masquer le classement du tri-poteur (pas la question). */
+const hostRankingVisible = ref(true)
 
 const modalOpen = ref(false)
 const modalTab = ref<'rules' | 'stats'>('stats')
@@ -53,13 +60,23 @@ watch([hostId, () => players.value.map((p) => p.id).join()], () => {
   if (skipOrderSync.value) return
   const g = guesserIds()
   if (g.length === 0) {
-    orderIds.value = []
+    hostOrderIds.value = []
+    attemptOrderIds.value = []
     return
   }
-  const cur = orderIds.value
-  const valid = cur.length === g.length && g.every((id) => cur.includes(id))
-  if (!valid) {
-    orderIds.value = g.slice()
+  const curH = hostOrderIds.value
+  const validH = curH.length === g.length && g.every((id) => curH.includes(id))
+  if (!validH) hostOrderIds.value = g.slice()
+
+  const curA = attemptOrderIds.value
+  const validA = curA.length === g.length && g.every((id) => curA.includes(id))
+  if (!validA) attemptOrderIds.value = g.slice()
+})
+
+watch(gameMode, (m) => {
+  if (m === 'ranking') {
+    hostRankingVisible.value = true
+    attemptOrderIds.value = guesserIds().slice()
   }
 })
 
@@ -101,6 +118,7 @@ function goToGame(): void {
   pickRandomHost()
   pickRandomQuestion()
   questionVisible.value = true
+  hostRankingVisible.value = true
   step.value = 'game'
 }
 
@@ -121,20 +139,29 @@ function closeModal(): void {
   modalOpen.value = false
 }
 
-function moveOrder(index: number, direction: -1 | 1): void {
-  const arr = orderIds.value.slice()
+function swapOrderIds(ids: string[], index: number, direction: -1 | 1): string[] {
+  const arr = ids.slice()
   const j = index + direction
-  if (j < 0 || j >= arr.length) return
+  if (j < 0 || j >= arr.length) return arr
   const t = arr[index]
   arr[index] = arr[j]
   arr[j] = t
-  orderIds.value = arr
+  return arr
+}
+
+function moveHostOrder(index: number, direction: -1 | 1): void {
+  hostOrderIds.value = swapOrderIds(hostOrderIds.value, index, direction)
+}
+
+function moveAttemptOrder(index: number, direction: -1 | 1): void {
+  attemptOrderIds.value = swapOrderIds(attemptOrderIds.value, index, direction)
 }
 
 function advanceAfterScore(): void {
   pickRandomHost()
   pickRandomQuestion()
   questionVisible.value = true
+  hostRankingVisible.value = true
 }
 
 function captureUndo(): void {
@@ -142,8 +169,10 @@ function captureUndo(): void {
     players: players.value.map((p) => ({ ...p })),
     hostId: hostId.value,
     questionText: questionText.value,
-    orderIds: orderIds.value.slice(),
-    questionVisible: questionVisible.value
+    hostOrderIds: hostOrderIds.value.slice(),
+    attemptOrderIds: attemptOrderIds.value.slice(),
+    questionVisible: questionVisible.value,
+    hostRankingVisible: hostRankingVisible.value
   }
 }
 
@@ -172,8 +201,10 @@ async function undoLastScore(): Promise<void> {
   players.value = u.players.map((p) => ({ ...p }))
   hostId.value = u.hostId
   questionText.value = u.questionText
-  orderIds.value = u.orderIds.slice()
+  hostOrderIds.value = u.hostOrderIds.slice()
+  attemptOrderIds.value = u.attemptOrderIds.slice()
   questionVisible.value = u.questionVisible
+  hostRankingVisible.value = u.hostRankingVisible
   undoState.value = null
   await nextTick()
   skipOrderSync.value = false
@@ -189,7 +220,9 @@ function wipeAll(): void {
   step.value = 'setup'
   hostId.value = ''
   questionText.value = ''
-  orderIds.value = []
+  hostOrderIds.value = []
+  attemptOrderIds.value = []
+  hostRankingVisible.value = true
   undoState.value = null
   closeModal()
 }
@@ -285,99 +318,245 @@ function wipeAll(): void {
             </button>
           </div>
 
+          <p v-if="gameMode === 'order'" class="mode-hint">
+            Indicatif : jusqu’à 4 questions pour deviner ta question.
+          </p>
+          <p v-else class="mode-hint">
+            Indicatif : jusqu’à 3 essais pour refaire ton classement.
+          </p>
+
           <div class="divider divider--tight" />
 
-          <div class="q-row">
-            <button type="button" class="btn btn-sm" @click="anotherRandomQuestion">Autre au hasard</button>
-            <button
-              type="button"
-              class="eye-btn"
-              :aria-label="questionVisible ? 'Masquer la question' : 'Afficher la question'"
-              @click="questionVisible = !questionVisible"
-            >
-              <!-- œil ouvert -->
-              <svg
-                v-if="questionVisible"
-                class="eye-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+          <!-- Question à deviner : question masquable -->
+          <template v-if="gameMode === 'order'">
+            <div class="q-row">
+              <button type="button" class="btn btn-sm" @click="anotherRandomQuestion">Autre au hasard</button>
+              <button
+                type="button"
+                class="eye-btn"
+                :aria-label="questionVisible ? 'Masquer la question' : 'Afficher la question'"
+                @click="questionVisible = !questionVisible"
               >
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              <!-- œil fermé -->
-              <svg
-                v-else
-                class="eye-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            </button>
-          </div>
+                <svg
+                  v-if="questionVisible"
+                  class="eye-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg
+                  v-else
+                  class="eye-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
 
-          <div
-            class="question-block"
-            :class="{ 'question-block--hidden': !questionVisible }"
-            aria-live="polite"
-          >
-            <template v-if="questionVisible">
-              <label for="q-text" class="sr-only">Question</label>
+            <div
+              class="question-block"
+              :class="{ 'question-block--hidden': !questionVisible }"
+              aria-live="polite"
+            >
+              <template v-if="questionVisible">
+                <label for="q-text-order" class="sr-only">Question</label>
+                <textarea
+                  id="q-text-order"
+                  v-model="questionText"
+                  class="q-textarea"
+                  placeholder="Écris ou garde celle du hasard…"
+                  rows="5"
+                />
+              </template>
+              <p v-else class="question-hidden-msg">Question masquée</p>
+            </div>
+          </template>
+
+          <!-- Classement à refaire : question toujours visible -->
+          <template v-else>
+            <div class="q-row q-row--solo">
+              <button type="button" class="btn btn-sm" @click="anotherRandomQuestion">Autre au hasard</button>
+            </div>
+            <div class="question-block">
+              <label for="q-text-rank" class="sr-only">Question</label>
               <textarea
-                id="q-text"
+                id="q-text-rank"
                 v-model="questionText"
                 class="q-textarea"
                 placeholder="Écris ou garde celle du hasard…"
                 rows="5"
               />
-            </template>
-            <p v-else class="question-hidden-msg">Masquée</p>
-          </div>
+            </div>
+          </template>
 
           <div class="divider divider--tight" />
 
-          <p class="rank-title">Classement des potos</p>
-          <p class="rank-hint">Sans le tri-poteur — utilise ↑ ↓ pour placer l’ordre.</p>
+          <!-- Un seul classement (tri-poteur) -->
+          <template v-if="gameMode === 'order'">
+            <p class="rank-title">Classement des potos</p>
+            <p class="rank-hint">Sans le tri-poteur — ↑ ↓ pour placer l’ordre.</p>
 
-          <div v-if="orderIds.length === 0" class="toast muted">Pas assez de monde pour un classement.</div>
-          <div v-else class="orderBuilder">
-            <div v-for="(id, idx) in orderIds" :key="id" class="orderRow orderRow--tight">
-              <div class="orderPos">#{{ idx + 1 }}</div>
-              <div class="orderName">{{ players.find((p) => p.id === id)?.name ?? '—' }}</div>
-              <div class="orderActions">
-                <button
-                  type="button"
-                  class="miniBtn"
-                  :disabled="idx === 0"
-                  aria-label="Monter"
-                  @click="moveOrder(idx, -1)"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  class="miniBtn"
-                  :disabled="idx === orderIds.length - 1"
-                  aria-label="Descendre"
-                  @click="moveOrder(idx, 1)"
-                >
-                  ↓
-                </button>
+            <div v-if="hostOrderIds.length === 0" class="toast muted">Pas assez de monde pour un classement.</div>
+            <div v-else class="orderBuilder">
+              <div v-for="(id, idx) in hostOrderIds" :key="id" class="orderRow orderRow--tight">
+                <div class="orderPos">#{{ idx + 1 }}</div>
+                <div class="orderName">{{ players.find((p) => p.id === id)?.name ?? '—' }}</div>
+                <div class="orderActions">
+                  <button
+                    type="button"
+                    class="miniBtn"
+                    :disabled="idx === 0"
+                    aria-label="Monter"
+                    @click="moveHostOrder(idx, -1)"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    class="miniBtn"
+                    :disabled="idx === hostOrderIds.length - 1"
+                    aria-label="Descendre"
+                    @click="moveHostOrder(idx, 1)"
+                  >
+                    ↓
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
+
+          <!-- Tri-poteur + potes : deux classements -->
+          <template v-else>
+            <div class="rank-head">
+              <div>
+                <p class="rank-title">Ton classement (tri-poteur)</p>
+                <p class="rank-hint">Ordre vrai — ↑ ↓. Passe le tel aux potes après.</p>
+              </div>
+              <button
+                type="button"
+                class="eye-btn"
+                :aria-label="hostRankingVisible ? 'Masquer ton classement' : 'Afficher ton classement'"
+                @click="hostRankingVisible = !hostRankingVisible"
+              >
+                <svg
+                  v-if="hostRankingVisible"
+                  class="eye-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg
+                  v-else
+                  class="eye-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+
+            <div
+              v-if="hostOrderIds.length === 0"
+              class="toast muted"
+            >
+              Pas assez de monde pour un classement.
+            </div>
+            <div
+              v-else
+              class="orderBuilder"
+              :class="{ 'orderBuilder--masked': !hostRankingVisible }"
+            >
+              <template v-if="hostRankingVisible">
+                <div v-for="(id, idx) in hostOrderIds" :key="'h-' + id" class="orderRow orderRow--tight">
+                  <div class="orderPos">#{{ idx + 1 }}</div>
+                  <div class="orderName">{{ players.find((p) => p.id === id)?.name ?? '—' }}</div>
+                  <div class="orderActions">
+                    <button
+                      type="button"
+                      class="miniBtn"
+                      :disabled="idx === 0"
+                      aria-label="Monter"
+                      @click="moveHostOrder(idx, -1)"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      class="miniBtn"
+                      :disabled="idx === hostOrderIds.length - 1"
+                      aria-label="Descendre"
+                      @click="moveHostOrder(idx, 1)"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <p v-else class="rank-mask-msg">Classement du tri-poteur masqué</p>
+            </div>
+
+            <div class="divider divider--tight" />
+
+            <p class="rank-title">Classement des potos (tentative)</p>
+            <p class="rank-hint">Même liste — à vous de refaire l’ordre du tri-poteur. ↑ ↓</p>
+
+            <div v-if="attemptOrderIds.length === 0" class="toast muted">Pas assez de monde.</div>
+            <div v-else class="orderBuilder">
+              <div v-for="(id, idx) in attemptOrderIds" :key="'a-' + id" class="orderRow orderRow--tight orderRow--attempt">
+                <div class="orderPos">#{{ idx + 1 }}</div>
+                <div class="orderName">{{ players.find((p) => p.id === id)?.name ?? '—' }}</div>
+                <div class="orderActions">
+                  <button
+                    type="button"
+                    class="miniBtn"
+                    :disabled="idx === 0"
+                    aria-label="Monter"
+                    @click="moveAttemptOrder(idx, -1)"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    class="miniBtn"
+                    :disabled="idx === attemptOrderIds.length - 1"
+                    aria-label="Descendre"
+                    @click="moveAttemptOrder(idx, 1)"
+                  >
+                    ↓
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
 
           <div v-if="undoState" class="undo-wrap">
             <button type="button" class="btn btn-sm btn-ghost" @click="undoLastScore">Annuler le dernier résultat</button>
@@ -451,7 +630,7 @@ function wipeAll(): void {
               <p>
                 Salut ! Vous êtes entre potes : le but, c’est de rigoler et d’enchaîner les tours sans vous prendre la tête.
               </p>
-              <h3>Ordre à deviner</h3>
+              <h3>Question à deviner</h3>
               <p>
                 Si c’est ton tour de tri-poteur, tu choisis une question (ou tu gardes celle au hasard). Ensuite tu mets les autres dans l’ordre qui colle à ta question — sans la dire à voix haute.
                 Tes potes ont le droit de te poser <strong>jusqu’à 4 questions</strong> pour essayer de deviner quelle était ta question.
@@ -469,7 +648,7 @@ function wipeAll(): void {
                 S’ils y arrivent : <strong>1 point chacun</strong> (sauf toi). Sinon : <strong>2 points pour toi</strong>.
               </p>
               <p class="muted">
-                Tu peux masquer la question sur l’écran si tu passes le téléphone — l’icône œil sert à ça.
+                En « Question à deviner », l’œil masque la question. En « Classement à refaire », il masque le classement du tri-poteur ; les potes ont leur propre liste en dessous.
               </p>
             </div>
           </div>
@@ -577,12 +756,70 @@ function wipeAll(): void {
   margin: 8px 0;
 }
 
+.mode-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.88;
+  color: var(--t-text-strong);
+  font-weight: 600;
+}
+
 .q-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
+}
+
+.q-row--solo {
+  justify-content: flex-start;
+}
+
+.rank-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.rank-head .rank-title {
+  margin-bottom: 2px;
+}
+
+.orderBuilder--masked {
+  min-height: 48px;
+}
+
+.rank-mask-msg {
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--t-text-strong);
+  border-radius: var(--t-radius-md);
+  border: 2px dashed var(--t-border);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  .rank-mask-msg {
+    background: rgba(0, 0, 0, 0.15);
+  }
+}
+
+.orderRow--attempt {
+  border-color: rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .orderRow--attempt {
+    background: rgba(56, 189, 248, 0.08);
+  }
 }
 
 .btn-sm {
