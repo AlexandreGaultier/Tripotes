@@ -266,7 +266,7 @@ function wipeAll(): void {
           </div>
 
           <div v-if="players.length === 0" class="toast muted" style="margin-top: 14px">
-            Zéro poto pour l’instant — commence par en ajouter au moins deux pour jouer.
+            Zéro poto pour l’instant, commence par en ajouter au moins deux pour jouer.
           </div>
 
           <div v-else class="name-cards">
@@ -409,7 +409,7 @@ function wipeAll(): void {
           <!-- Un seul classement (tri-poteur) -->
           <template v-if="gameMode === 'order'">
             <p class="rank-title">Classement des potos</p>
-            <p class="rank-hint">Sans le tri-poteur — ↑ ↓ pour placer l’ordre.</p>
+            <p class="rank-hint">Sans le tri-poteur ↑ ↓ pour placer l’ordre.</p>
 
             <div v-if="hostOrderIds.length === 0" class="toast muted">Pas assez de monde pour un classement.</div>
             <div v-else class="orderBuilder">
@@ -445,7 +445,7 @@ function wipeAll(): void {
             <div class="rank-head">
               <div>
                 <p class="rank-title">Ton classement (tri-poteur)</p>
-                <p class="rank-hint">Ordre vrai — ↑ ↓. Passe le tel aux potes après.</p>
+                <p class="rank-hint">Ordre vrai ↑ ↓. Passe le tel aux potes après.</p>
               </div>
               <button
                 type="button"
@@ -527,7 +527,7 @@ function wipeAll(): void {
             <div class="divider divider--tight" />
 
             <p class="rank-title">Classement des potos (tentative)</p>
-            <p class="rank-hint">Même liste — à vous de refaire l’ordre du tri-poteur. ↑ ↓</p>
+            <p class="rank-hint">Même liste, à vous de refaire l’ordre du tri-poteur. ↑ ↓</p>
 
             <div v-if="attemptOrderIds.length === 0" class="toast muted">Pas assez de monde.</div>
             <div v-else class="orderBuilder">
@@ -632,7 +632,7 @@ function wipeAll(): void {
               </p>
               <h3>Question à deviner</h3>
               <p>
-                Si c’est ton tour de tri-poteur, tu choisis une question (ou tu gardes celle au hasard). Ensuite tu mets les autres dans l’ordre qui colle à ta question — sans la dire à voix haute.
+                Si c’est ton tour de tri-poteur, tu choisis une question (ou tu gardes celle au hasard). Ensuite tu mets les autres dans l’ordre qui colle à ta question, sans la dire à voix haute.
                 Tes potes ont le droit de te poser <strong>jusqu’à 4 questions</strong> pour essayer de deviner quelle était ta question.
               </p>
               <p>
@@ -646,9 +646,6 @@ function wipeAll(): void {
               </p>
               <p>
                 S’ils y arrivent : <strong>1 point chacun</strong> (sauf toi). Sinon : <strong>2 points pour toi</strong>.
-              </p>
-              <p class="muted">
-                En « Question à deviner », l’œil masque la question. En « Classement à refaire », il masque le classement du tri-poteur ; les potes ont leur propre liste en dessous.
               </p>
             </div>
           </div>
