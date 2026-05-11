@@ -234,8 +234,8 @@ function wipeAll(): void {
       <header class="topbar">
         <div class="brand">
           <h1>Tri-potes</h1>
-          <p v-if="step === 'setup'">Ajoutez vos potes, puis lancez la soirée.</p>
-          <p v-else>À toi de jouer.</p>
+          <p v-if="step === 'setup'">Ajoutez vos potes, puis tri les !</p>
+          <p v-else>À toi de tri-poter !</p>
         </div>
         <div class="top-actions">
           <button type="button" class="btn" @click="openStatsModal">Stats</button>
